@@ -74,7 +74,7 @@ class Map:
                 self.encryptedData = self.raw().read_bytes(self.dataLen)
                 decryptedData = bytearray()
                 for i in range(0, self.dataLen):
-                    decryptedData.append(self.encryptedData[i] ^ ord(self._key[i % len(self._key)][0]))
+                    decryptedData.append(self.encryptedData[i] ^ ord(self._key[i % len(self._key)]))
 
                 cleanData = io.BytesIO(decryptedData)
                 self._raw = _BinaryStream(cleanData, True)
@@ -86,18 +86,35 @@ class Map:
         self._obj["bottomNeighbourId"] = self.raw().read_int32()
         self._obj["leftNeighbourId"] = self.raw().read_int32()
         self._obj["rightNeighbourId"] = self.raw().read_int32()
-        self._obj["shadowBonusOnEntities"]  = self.raw().read_int32()
+        self._obj["shadowBonusOnEntities"] = self.raw().read_uint32()
 
-        if self._obj["mapVersion"] >= 3:
+        if self._obj["mapVersion"] >= 9:
+            read_color = self.raw().read_int32()
+            self._obj["backgroundAlpha"] = (read_color & 4278190080) >> 32
+            self._obj["backgroundRed"] = (read_color & 16711680) >> 16
+            self._obj["backgroundGreen"] = (read_color & 65280) >> 8
+            self._obj["backgroundBlue"] = read_color & 255
+            read_color = self.raw().read_uint32()
+            grid_alpha = (read_color & 4278190080) >> 32
+            grid_red = (read_color & 16711680) >> 16
+            grid_green = (read_color & 65280) >> 8
+            grid_blue = read_color & 255
+            self._obj["gridColor"] = (grid_alpha & 255) << 32 | (grid_red & 255) << 16 | (grid_green & 255) << 8 | grid_blue & 255
+        elif self._obj["mapVersion"] >= 3:
             self._obj["backgroundRed"] = self.raw().read_char()
             self._obj["backgroundGreen"] = self.raw().read_char()
             self._obj["backgroundBlue"] = self.raw().read_char()
-            self._obj["backgroundColor"] = (self._obj["backgroundRed"] & 255) << 16 | (self._obj["backgroundGreen"] & 255) << 8 | self._obj["backgroundBlue"] & 255
+
+        self._obj["backgroundColor"] = (self._obj["backgroundRed"] & 255) << 16 | (self._obj["backgroundGreen"] & 255) << 8 | self._obj["backgroundBlue"] & 255
 
         if self._obj["mapVersion"] >= 4:
-            self._obj["zoomScale"] = self.raw().read_uint16()
+            self._obj["zoomScale"] = self.raw().read_uint16() / 100
             self._obj["zoomOffsetX"] = self.raw().read_int16()
             self._obj["zoomOffsetY"] = self.raw().read_int16()
+            if self._obj["zoomScale"] < 1:
+                self._obj["zoomScale"] = 1
+                self._obj["zoomOffsetX"] = 0
+                self._obj["zoomOffsetY"] = 0
 
         self._obj["useLowPassFilter"] = self.raw().read_bool()
         self._obj["useReverb"] = self.raw().read_bool()
@@ -121,7 +138,7 @@ class Map:
             fg.read()
             self._obj["foregroundsFixtures"].append(fg.getObj())
 
-        self._obj["unknown_1"] = self.raw().read_int32()
+        self.raw().read_int32()
         self._obj["groundCRC"] = self.raw().read_int32()
         self._obj["layersCount"] = self.raw().read_char()
 
@@ -152,7 +169,15 @@ class Map:
         self.raw().write_int32(self._obj["rightNeighbourId"])
         self.raw().write_int32(self._obj["shadowBonusOnEntities"])
 
-        if self._obj["mapVersion"] >= 3:
+        if self._obj["mapVersion"] >= 9:
+            write_color = ((self._obj["backgroundAlpha"] << 32) & 4278190080 |
+                           (self._obj["backgroundRed"] << 16) & 16711680 |
+                           (self._obj["backgroundGreen"] << 8) & 65280 |
+                           self._obj["backgroundBlue"] & 255)
+            self.raw().write_int32(write_color)
+            write_color = self._obj["gridColor"]
+            self.raw().write_uint32(write_color)
+        elif self._obj["mapVersion"] >= 3:
             self.raw().write_char(self._obj["backgroundRed"])
             self.raw().write_char(self._obj["backgroundGreen"])
             self.raw().write_char(self._obj["backgroundBlue"])
@@ -279,7 +304,10 @@ class Layer:
         return self._parrent.raw()
 
     def read(self):
-        self._obj["layerId"] = self.raw().read_int32()
+        if self.mapVersion >= 9:
+            self._obj["layerId"] = self.raw().read_char()
+        else:
+            self._obj["layerId"] = self.raw().read_int32()
         self._obj["cellsCount"] = self.raw().read_int16()
         self._obj["cells"] = []
         for i in range(0, self._obj["cellsCount"]):
@@ -288,7 +316,10 @@ class Layer:
             self._obj["cells"].append(ce.getObj())
 
     def write(self):
-        self.raw().write_int32(self._obj["layerId"])
+        if self.mapVersion >= 9:
+            self.raw().write_byte(self._obj["layerId"])
+        else:
+            self.raw().write_int32(self._obj["layerId"])
         self.raw().write_int16(self._obj["cellsCount"])
         for i in range(0, self._obj["cellsCount"]):
             self._obj["cells"][i].write()
@@ -364,38 +395,94 @@ class CellData:
         return self._parrent.raw()
 
     def read(self):
-        self._obj["floor"] = self.raw().read_char() # * 10
-        self._obj["losmov"] = self.raw().read_uchar()
+        self._obj["floor"] = self.raw().read_char() * 10
+        if self._obj["floor"] == -1280:
+            return
+        if self.mapVersion >= 9:
+            tmp_bytes = self.raw().read_int16()
+            self._obj["mov"] = (tmp_bytes & 1) == 0
+            self._obj["nonWalkableDuringFight"] = (tmp_bytes & 2) != 0
+            self._obj["nonWalkableDuringRP"] = (tmp_bytes & 4) != 0
+            self._obj["los"] = (tmp_bytes & 8) == 0
+            self._obj["blue"] = (tmp_bytes & 16) != 0
+            self._obj["red"] = (tmp_bytes & 32) != 0
+            self._obj["visible"] = (tmp_bytes & 64) != 0
+            self._obj["farmCell"] = (tmp_bytes & 128) != 0
+            if self.mapVersion >= 10:
+                self._obj["havenbagCell"] = (tmp_bytes & 256) != 0
+                top_arrow = (tmp_bytes & 512) != 0
+                bottom_arrow = (tmp_bytes & 1024) != 0
+                right_arrow = (tmp_bytes & 2048) != 0
+                left_arrow = (tmp_bytes & 4096) != 0
+            else:
+                top_arrow = (tmp_bytes & 256) != 0
+                bottom_arrow = (tmp_bytes & 512) != 0
+                right_arrow = (tmp_bytes & 1024) != 0
+                left_arrow = (tmp_bytes & 2048) != 0
+            if top_arrow:
+                self._parrent.topArrowCell.append(self.cellId)
+            if bottom_arrow:
+                self._parrent.bottomArrowCell.append(self.cellId)
+            if right_arrow:
+                self._parrent.rightArrowCell.append(self.cellId)
+            if left_arrow:
+                self._parrent.leftArrowCell.append(self.cellId)
+        else:
+            self._obj["losmov"] = self.raw().read_uchar()
+            self._obj["los"] = (self._obj["losmov"] & 2) >> 1 == 1
+            self._obj["mov"] = (self._obj["losmov"] & 1) == 1
+            self._obj["visible"] = (self._obj["losmov"] & 64) >> 6 == 1
+            self._obj["farmCell"] = (self._obj["losmov"] & 32) >> 5 == 1
+            self._obj["blue"] = (self._obj["losmov"] & 16) >> 4 == 1
+            self._obj["red"] = (self._obj["losmov"] & 8) >> 3 == 1
+            self._obj["nonWalkableDuringRP"] = (self._obj["losmov"] & 128) >> 7 == 1
+            self._obj["nonWalkableDuringFight"] = (self._obj["losmov"] & 4)
         self._obj["speed"] = self.raw().read_char()
-        self._obj["mapChangeData"] = self.raw().read_uchar()
+        self._obj["mapChangeData"] = self.raw().read_char()
 
         if self.mapVersion > 5:
             self._obj["moveZone"] = self.raw().read_uchar()
-        if self.mapVersion > 7:
+        if self.mapVersion > 7 and self.mapVersion < 9:
             self._obj["tmpBits"] = self.raw().read_char()
             self.arrow = 15 & self._obj["tmpBits"]
 
             if self.useTopArrow():
-                self._map.topArrowCell.append(self.cellId)
+                self._parrent.topArrowCell.append(self.cellId)
 
             if self.useBottomArrow():
-                self._map.bottomArrowCell.append(self.cellId)
+                self._parrent.bottomArrowCell.append(self.cellId)
 
             if self.useLeftArrow():
-                self._map.leftArrowCell.append(self.cellId)
+                self._parrent.leftArrowCell.append(self.cellId)
 
             if self.useRightArrow():
-                self._map.rightArrowCell.append(self.cellId)
+                self._parrent.rightArrowCell.append(self.cellId)
 
     def write(self):
+        if self._obj["floor"] == -1280:
+            return
         self.raw().write_char(self._obj["floor"])
-        self.raw().write_uchar(self._obj["losmov"])
+        if self.mapVersion >= 9:
+            tmp_bytes = self.raw().read_int16()
+            tmp_bytes |= 1 if self._obj["mov"] else 0
+            tmp_bytes |= 2 if self._obj["nonWalkableDuringFight"] else 0
+            tmp_bytes |= 4 if self._obj["nonWalkableDuringRP"] else 0
+            tmp_bytes |= 8 if self._obj["los"] else 0
+            tmp_bytes |= 16 if self._obj["blue"] else 0
+            tmp_bytes |= 32 if self._obj["red"] else 0
+            tmp_bytes |= 64 if self._obj["visible"] else 0
+            tmp_bytes |= 128 if self._obj["farmCell"] else 0
+            if self.mapVersion >= 10:
+                tmp_bytes |= 256 if self._obj["havenbagCell"] else 0
+            self.raw().write_int16(tmp_bytes)
+        else:
+            self.raw().write_uchar(self._obj["losmov"])
         self.raw().write_char(self._obj["speed"])
         self.raw().write_uchar(self._obj["mapChangeData"])
 
         if self.mapVersion > 5:
             self.raw().write_uchar(self._obj["moveZone"])
-        if self.mapVersion > 7:
+        if self.mapVersion > 7 and self.mapVersion < 9:
             self.raw().write_char(self._obj["tmpBits"])
 
     def getObj(self):

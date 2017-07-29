@@ -17,6 +17,13 @@ class _BinaryStream:
         else:
             self._base_stream.seek(value)
 
+    def bytes_available(self):
+        position = self._base_stream.tell()
+        self._base_stream.seek(0, 2)
+        eof = self._base_stream.tell()
+        self._base_stream.seek(position, 0)
+        return eof - position
+
     # Write functions
 
     def write_bytes(self, value):
@@ -127,6 +134,9 @@ class _BinaryStream:
 
     def read_string(self):
         length = self.read_uint16()
+        return self._unpack(str(length) + 's', length)
+
+    def read_string_bytes(self, length):
         return self._unpack(str(length) + 's', length)
 
     def _unpack(self, fmt, length=1):
