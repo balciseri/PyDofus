@@ -5,10 +5,12 @@ import zlib, tempfile, io
 from ._binarystream import _BinaryStream
 from collections import OrderedDict
 
+
 class InvalidDLMFile(Exception):
     def __init__(self, message):
         super(InvalidDLMFile, self).__init__(message)
         self.message = message
+
 
 class DLM:
     def __init__(self, stream, key=None):
@@ -45,6 +47,7 @@ class DLM:
         self._stream.write(zlib.compress(buffer.read()))
 
         buffer.close()
+
 
 class Map:
     def __init__(self, raw, key):
@@ -115,6 +118,9 @@ class Map:
                 self._obj["zoomScale"] = 1
                 self._obj["zoomOffsetX"] = 0
                 self._obj["zoomOffsetY"] = 0
+
+        if self._obj["mapVersion"] > 10:
+            self._obj["tacticalModeTemplateId"] = self.raw().read_int32()
 
         self._obj["useLowPassFilter"] = self.raw().read_bool()
         self._obj["useReverb"] = self.raw().read_bool()
@@ -187,6 +193,9 @@ class Map:
             self.raw().write_int16(self._obj["zoomOffsetX"])
             self.raw().write_int16(self._obj["zoomOffsetY"])
 
+        if self._obj["mapVersion"] > 10:
+            self.raw().write_int32(self._obj["tacticalModeTemplateId"])
+
         self.raw().write_bool(self._obj["useLowPassFilter"])
         self.raw().write_bool(self._obj["useReverb"])
 
@@ -255,6 +264,7 @@ class Map:
             ce.setObj(self._obj["cells"][i])
             self._obj["cells"][i] = ce
 
+
 class Fixture:
     def __init__(self, parrent):
         self._parrent = parrent
@@ -265,16 +275,16 @@ class Fixture:
 
     def read(self):
         self._obj["fixtureId"] = self.raw().read_int32()
-        self._obj["offsetX"]= self.raw().read_int16()
+        self._obj["offsetX"] = self.raw().read_int16()
         self._obj["offsetY"] = self.raw().read_int16()
         self._obj["rotation"] = self.raw().read_int16()
         self._obj["xScale"] = self.raw().read_int16()
         self._obj["yScale"] = self.raw().read_int16()
         self._obj["redMultiplier"] = self.raw().read_char()
         self._obj["greenMultiplier"] = self.raw().read_char()
-        self._obj["blueMultiplier"] =  self.raw().read_char()
+        self._obj["blueMultiplier"] = self.raw().read_char()
         self._obj["hue"] = self._obj["redMultiplier"] | self._obj["greenMultiplier"] | self._obj["blueMultiplier"]
-        self._obj["alpha"] =  self.raw().read_uchar()
+        self._obj["alpha"] = self.raw().read_uchar()
 
     def write(self):
         self.raw().write_int32(self._obj["fixtureId"])
@@ -293,6 +303,7 @@ class Fixture:
 
     def setObj(self, obj):
         self._obj = obj
+
 
 class Layer:
     def __init__(self, parrent, mapVersion):
@@ -334,6 +345,7 @@ class Layer:
             ce = Cell(self, self.mapVersion)
             ce.setObj(self._obj["cells"][i])
             self._obj["cells"][i] = ce
+
 
 class Cell:
     def __init__(self, parrent, mapVersion):
@@ -383,6 +395,7 @@ class Cell:
 
             el.setObj(self._obj["elements"][i])
             self._obj["elements"][i] = el
+
 
 class CellData:
     def __init__(self, parrent, id, mapVersion):
@@ -442,6 +455,10 @@ class CellData:
 
         if self.mapVersion > 5:
             self._obj["moveZone"] = self.raw().read_uchar()
+
+        if self.mapVersion > 10 and (self.hasLinkedZoneRP() or self.hasLinkedZoneFight()):
+            self._obj["_linkedZone"] = self.raw().read_uchar()
+
         if self.mapVersion > 7 and self.mapVersion < 9:
             self._obj["tmpBits"] = self.raw().read_char()
             self.arrow = 15 & self._obj["tmpBits"]
@@ -515,6 +532,16 @@ class CellData:
         else:
             return True
 
+    def hasLinkedZoneRP(self):
+        return self._obj["mov"] and not self._obj["farmCell"]
+
+    def hasLinkedZoneFight(self):
+        return self._obj["mov"] \
+               and not self._obj["nonWalkableDuringFight"]\
+               and not self._obj["farmCell"]\
+               and not self._obj["havenbagCell"]
+
+
 class BasicElement:
     def GetElementFromType(self, parrent, type, mapVersion):
         if type == 2: # GRAPHICAL
@@ -523,6 +550,7 @@ class BasicElement:
             return SoundElement(parrent, mapVersion)
         else:
             raise InvalidDLMFile("Invalid element type.")
+
 
 class GraphicalElement:
     def __init__(self, parrent, mapVersion):
@@ -581,6 +609,7 @@ class GraphicalElement:
 
     def setObj(self, obj):
         self._obj = obj
+
 
 class SoundElement:
     def __init__(self, parrent, mapVersion):
