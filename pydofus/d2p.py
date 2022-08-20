@@ -91,8 +91,13 @@ class D2PReader:
 
         i = 0
         while i < self._number_properties:
-            property_type = (D2P_file_binary.read_string()).decode()
-            property_value = (D2P_file_binary.read_string()).decode()
+            try:
+                property_type = (D2P_file_binary.read_string()).decode()
+                property_value = (D2P_file_binary.read_string()).decode()
+            except ValueError:
+                property_type = (D2P_file_binary.read_string()).decode('latin-1')
+                property_value = (D2P_file_binary.read_string()).decode('latin-1')
+            
             if property_type == b"" or property_value == b"":
                 raise InvalidD2PFile("The file appears to be corrupt.")
             self._properties[property_type] = property_value
