@@ -122,14 +122,6 @@ class Map:
         if self._obj["mapVersion"] > 10:
             self._obj["tacticalModeTemplateId"] = self.raw().read_int32()
 
-        self._obj["useLowPassFilter"] = self.raw().read_bool()
-        self._obj["useReverb"] = self.raw().read_bool()
-
-        if self._obj["useReverb"]:
-            self._obj["presetId"] = self.raw().read_int32()
-        else:
-            self._obj["presetId"] = -1
-
         self._obj["backgroundsCount"] = self.raw().read_char()
         self._obj["backgroundFixtures"] = []
         for i in range(0, self._obj["backgroundsCount"]):
@@ -195,12 +187,6 @@ class Map:
 
         if self._obj["mapVersion"] > 10:
             self.raw().write_int32(self._obj["tacticalModeTemplateId"])
-
-        self.raw().write_bool(self._obj["useLowPassFilter"])
-        self.raw().write_bool(self._obj["useReverb"])
-
-        if self._obj["useReverb"]:
-            self.raw().write_int32(self._obj["presetId"])
 
         self.raw().write_char(self._obj["backgroundsCount"])
         for i in range(0, self._obj["backgroundsCount"]):
