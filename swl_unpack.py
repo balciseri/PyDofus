@@ -12,7 +12,7 @@ json_output = open(file.replace("swl", "json"), "w")
 
 swl = SWLReader(swl_input)
 swf_output.write(swl.SWF)
-swl_data = {'version':swl_reader.version, 'frame_rate':swl_reader.frame_rate, 'classes':swl_reader.classes}
+swl_data = {'version': swl.version, 'frame_rate': swl.frame_rate, 'classes': swl.classes}
 json.dump(swl_data, json_output, indent=4)
 
 swl_input.close()
